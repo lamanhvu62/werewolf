@@ -7,6 +7,7 @@ import { Player, Room } from "@/lib/types";
 import { Crown, Users, Play, Loader2, Copy, Check } from "lucide-react";
 import NightPhase from "@/components/NightPhase";
 import DayPhase from "@/components/DayPhase";
+import HunterRevenge from "@/components/HunterRevenge";
 
 export default function RoomPage({ params }: { params: Promise<{ roomCode: string }> }) {
   const { roomCode: rawRoomCode } = use(params);
@@ -289,6 +290,12 @@ export default function RoomPage({ params }: { params: Promise<{ roomCode: strin
       {room.status === "day" && me && (
         <div className="z-10 w-full mt-12">
           <DayPhase room={room} players={players} me={me} />
+        </div>
+      )}
+
+      {room.status === "hunter_revenge" && me && (
+        <div className="z-10 w-full mt-12">
+          <HunterRevenge room={room} players={players} me={me} />
         </div>
       )}
     </main>

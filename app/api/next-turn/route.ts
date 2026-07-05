@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { processNightAndStartDay } from "@/app/actions";
 
-const TURN_SEQUENCE = ["wolf", "seer"];
+const TURN_SEQUENCE = ["bodyguard", "wolf", "witch", "cult_leader", "seer"];
 
 export async function POST(request: Request) {
   try {
@@ -42,12 +42,19 @@ export async function POST(request: Request) {
     const nextTurn = TURN_SEQUENCE[nextIndex];
 
     // Check if the next role is alive and present
-    const { data: players, error: playersError } = await supabase
+    let query = supabase
       .from("players")
       .select("*")
       .eq("room_id", roomId)
-      .eq("role", nextTurn)
       .eq("is_alive", true);
+      
+    if (nextTurn === "wolf") {
+      query = query.in("role", ["wolf", "alpha_wolf"]);
+    } else {
+      query = query.eq("role", nextTurn);
+    }
+    
+    const { data: players, error: playersError } = await query;
 
     let nextTurnDuration = 15000; // 15 seconds by default
     

@@ -1,5 +1,5 @@
-export type RoomStatus = 'lobby' | 'night' | 'day';
-export type PlayerRole = 'wolf' | 'seer' | 'villager';
+export type RoomStatus = 'lobby' | 'night' | 'day' | 'hunter_revenge';
+export type PlayerRole = 'wolf' | 'seer' | 'villager' | 'bodyguard' | 'alpha_wolf' | 'witch' | 'hunter' | 'cult_leader';
 
 export interface Room {
   id: string;
@@ -17,6 +17,11 @@ export interface Player {
   name: string;
   role: PlayerRole | null;
   is_alive: boolean;
+  potion_heal_used: boolean;
+  potion_poison_used: boolean;
+  alpha_infection_used: boolean;
+  is_cult_member: boolean;
+  last_protected_id: string | null;
   joined_at: string;
 }
 

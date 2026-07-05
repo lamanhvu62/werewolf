@@ -19,7 +19,12 @@ CREATE TABLE players (
   name VARCHAR(50) NOT NULL,
   role VARCHAR(20),
   is_alive BOOLEAN DEFAULT true,
-  joined_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+  potion_heal_used BOOLEAN DEFAULT false,
+  potion_poison_used BOOLEAN DEFAULT false,
+  alpha_infection_used BOOLEAN DEFAULT false,
+  is_cult_member BOOLEAN DEFAULT false,
+  last_protected_id UUID REFERENCES players(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- Create actions table

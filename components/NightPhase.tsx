@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Player, Room } from "@/lib/types";
-import { submitAction } from "@/app/actions";
-import { Moon, Crosshair, Eye, ShieldAlert, Loader2, Clock } from "lucide-react";
+import { submitAction, getWolfTarget } from "@/app/actions";
+import { Moon, Crosshair, Eye, ShieldAlert, Loader2, Clock, Shield, FlaskConical, Skull, HeartPulse, UserPlus } from "lucide-react";
 
 interface NightPhaseProps {
   room: Room;
@@ -18,9 +18,16 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
 
+  // Special State for new roles
+  const [alphaMode, setAlphaMode] = useState<"kill" | "infect">("kill");
+  const [witchMode, setWitchMode] = useState<"heal" | "poison">(me.potion_heal_used ? "poison" : "heal");
+  const [wolfVictim, setWolfVictim] = useState<Player | null>(null);
+  const [localHealUsed, setLocalHealUsed] = useState(me.potion_heal_used);
+
   const alivePlayers = players.filter(p => p.is_alive && p.id !== me.id);
-  const isHost = room.host_id === me.id;
-  const isMyTurn = me.role === room.current_night_turn;
+  const isMyTurn = 
+    me.role === room.current_night_turn ||
+    (me.role === "alpha_wolf" && room.current_night_turn === "wolf");
   
   const autoProgressRef = useRef(false);
 
@@ -48,22 +55,16 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
     const now = new Date().getTime();
     const end = new Date(room.turn_ends_at).getTime();
     
-    // Allow a small buffer (500ms) to ensure smooth transition
     if (now >= end && !autoProgressRef.current) {
       autoProgressRef.current = true;
-      
-      // Add a random delay between 0-1500ms so not all clients hammer the API exactly at the same time
       const randomDelay = Math.floor(Math.random() * 1500);
-      
       setTimeout(() => {
         fetch("/api/next-turn", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ roomId: room.id }),
         }).finally(() => {
-          setTimeout(() => {
-            autoProgressRef.current = false;
-          }, 2000);
+          setTimeout(() => { autoProgressRef.current = false; }, 2000);
         });
       }, randomDelay);
     }
@@ -75,22 +76,63 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
       setHasActed(false);
       setInvestigationResult(null);
       setSelectedTarget(null);
+      
+      if (me.role === "witch") {
+        getWolfTarget(room.id).then(targetId => {
+          const victim = players.find(p => p.id === targetId);
+          setWolfVictim(victim || null);
+        });
+      }
     }
-  }, [isMyTurn]);
+  }, [isMyTurn, me.role, room.id, players]);
+
+  let selectablePlayers = alivePlayers;
+  if (me.role === "bodyguard") {
+     selectablePlayers = players.filter(p => p.is_alive && p.id !== me.last_protected_id); 
+  } else if (me.role === "cult_leader") {
+     selectablePlayers = alivePlayers.filter(p => !p.is_cult_member);
+  }
 
   const handleAction = async () => {
-    if (!selectedTarget || hasActed || isProcessing || !isMyTurn) return;
+    if (isProcessing || !isMyTurn) return;
     
     setIsProcessing(true);
     try {
       if (me.role === "wolf") {
+        if (!selectedTarget) return;
         await submitAction(room.id, me.id, selectedTarget, "kill");
         setHasActed(true);
+      } else if (me.role === "alpha_wolf") {
+        if (!selectedTarget) return;
+        await submitAction(room.id, me.id, selectedTarget, alphaMode);
+        setHasActed(true);
       } else if (me.role === "seer") {
+        if (!selectedTarget) return;
         await submitAction(room.id, me.id, selectedTarget, "investigate");
         const target = players.find(p => p.id === selectedTarget);
-        setInvestigationResult(target?.role === "wolf" ? "WOLF" : "NOT A WOLF");
+        setInvestigationResult(target?.role === "wolf" || target?.role === "alpha_wolf" ? "WOLF" : "NOT A WOLF");
         setHasActed(true);
+      } else if (me.role === "bodyguard") {
+        if (!selectedTarget) return;
+        await submitAction(room.id, me.id, selectedTarget, "protect");
+        setHasActed(true);
+      } else if (me.role === "cult_leader") {
+        if (!selectedTarget) return;
+        await submitAction(room.id, me.id, selectedTarget, "convert");
+        setHasActed(true);
+      } else if (me.role === "witch") {
+        if (witchMode === "heal") {
+           if (wolfVictim) await submitAction(room.id, me.id, wolfVictim.id, "heal");
+           setLocalHealUsed(true);
+           if (!me.potion_poison_used) {
+             setWitchMode("poison");
+           } else {
+             setHasActed(true);
+           }
+        } else if (witchMode === "poison") {
+           if (selectedTarget) await submitAction(room.id, me.id, selectedTarget, "poison");
+           setHasActed(true);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -112,14 +154,14 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
   if (!me.is_alive) {
     return (
       <div className="flex flex-col items-center justify-center space-y-6">
-        <Moon className="w-16 h-16 text-neutral-600" />
-        <h2 className="text-3xl font-bold text-neutral-500">You are Dead</h2>
+        <Skull className="w-16 h-16 text-red-900" />
+        <h2 className="text-3xl font-bold text-red-500">You are Dead</h2>
         <p className="text-neutral-600">Wait for the living to finish their night.</p>
       </div>
     );
   }
 
-  if (me.role === "villager") {
+  if (me.role === "villager" || me.role === "hunter") {
     return (
       <div className="flex flex-col items-center justify-center space-y-6">
         <Moon className="w-16 h-16 text-indigo-400 animate-pulse" />
@@ -130,23 +172,26 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
   }
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-8">
+    <div className="w-full max-w-2xl mx-auto space-y-8 pb-12">
       <div className="text-center space-y-4 mb-8">
         <div className="inline-flex p-3 rounded-full bg-neutral-900 border border-neutral-800">
-          {me.role === "wolf" ? (
+          {me.role === "wolf" || me.role === "alpha_wolf" ? (
             <ShieldAlert className="w-8 h-8 text-red-500" />
-          ) : (
+          ) : me.role === "seer" ? (
             <Eye className="w-8 h-8 text-blue-400" />
+          ) : me.role === "bodyguard" ? (
+            <Shield className="w-8 h-8 text-green-500" />
+          ) : me.role === "witch" ? (
+            <FlaskConical className="w-8 h-8 text-purple-500" />
+          ) : me.role === "cult_leader" ? (
+            <UserPlus className="w-8 h-8 text-pink-500" />
+          ) : (
+            <Moon className="w-8 h-8 text-neutral-500" />
           )}
         </div>
         <h2 className="text-3xl font-black uppercase tracking-wider text-white">
-          {me.role === "wolf" ? "Werewolf Phase" : "Seer Phase"}
+          {me.role.replace("_", " ")} Phase
         </h2>
-        <p className="text-neutral-400">
-          {me.role === "wolf" 
-            ? "Select a player to kill tonight." 
-            : "Select a player to investigate."}
-        </p>
       </div>
 
       {room.turn_ends_at && (
@@ -166,48 +211,100 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
         </div>
       ) : !hasActed ? (
         <div className="bg-neutral-900/50 backdrop-blur-sm border border-neutral-800 rounded-2xl p-6">
-          <h3 className="text-lg font-bold mb-4 text-white">Alive Players</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {alivePlayers.map(p => (
-              <button
-                key={p.id}
-                onClick={() => setSelectedTarget(p.id)}
-                className={`p-4 rounded-xl border text-left transition-all flex items-center justify-between ${
-                  selectedTarget === p.id
-                    ? me.role === "wolf" 
-                      ? "bg-red-500/20 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
-                      : "bg-blue-500/20 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.2)]"
-                    : "bg-neutral-800 border-neutral-700 hover:bg-neutral-700"
-                }`}
-              >
-                <span className="font-bold text-white">{p.name}</span>
-                {selectedTarget === p.id && (
-                  me.role === "wolf" ? <Crosshair className="w-5 h-5 text-red-500" /> : <Eye className="w-5 h-5 text-blue-400" />
-                )}
-              </button>
-            ))}
-            {alivePlayers.length === 0 && (
-              <p className="text-neutral-500 col-span-full text-center py-4">No other players alive.</p>
-            )}
-          </div>
+          
+          {me.role === "alpha_wolf" && (
+            <div className="flex gap-4 mb-6">
+              <button 
+                onClick={() => setAlphaMode("kill")}
+                className={`flex-1 py-3 rounded-lg font-bold border ${alphaMode === "kill" ? "bg-red-600/20 border-red-500 text-red-400" : "bg-neutral-800 border-neutral-700 text-neutral-400"}`}
+              >Kill</button>
+              <button 
+                onClick={() => setAlphaMode("infect")}
+                disabled={me.alpha_infection_used}
+                className={`flex-1 py-3 rounded-lg font-bold border ${alphaMode === "infect" ? "bg-green-600/20 border-green-500 text-green-400" : "bg-neutral-800 border-neutral-700 text-neutral-400"} disabled:opacity-50`}
+              >Infect (Once)</button>
+            </div>
+          )}
 
-          <button
-            onClick={handleAction}
-            disabled={!selectedTarget || isProcessing}
-            className={`w-full mt-6 py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
-              !selectedTarget 
-                ? "bg-neutral-800 text-neutral-500 cursor-not-allowed" 
-                : me.role === "wolf"
-                  ? "bg-red-600 hover:bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]"
-                  : "bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_20px_rgba(59,130,246,0.4)]"
-            }`}
-          >
-            {isProcessing ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              me.role === "wolf" ? "Confirm Kill" : "Investigate"
-            )}
-          </button>
+          {me.role === "witch" && (
+            <div className="mb-6 space-y-4">
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setWitchMode("heal")}
+                  disabled={localHealUsed}
+                  className={`flex-1 py-3 rounded-lg font-bold border ${witchMode === "heal" ? "bg-green-600/20 border-green-500 text-green-400" : "bg-neutral-800 border-neutral-700 text-neutral-400"} disabled:opacity-50`}
+                >Heal Potion</button>
+                <button 
+                  onClick={() => setWitchMode("poison")}
+                  disabled={me.potion_poison_used}
+                  className={`flex-1 py-3 rounded-lg font-bold border ${witchMode === "poison" ? "bg-purple-600/20 border-purple-500 text-purple-400" : "bg-neutral-800 border-neutral-700 text-neutral-400"} disabled:opacity-50`}
+                >Poison Potion</button>
+              </div>
+
+              {witchMode === "heal" && (
+                <div className="p-6 border border-green-900 bg-green-900/10 rounded-xl text-center space-y-4">
+                  <HeartPulse className="w-12 h-12 text-green-500 mx-auto" />
+                  {wolfVictim ? (
+                    <p className="text-lg text-white">The wolves attacked <span className="font-bold text-red-400">{wolfVictim.name}</span>.</p>
+                  ) : (
+                    <p className="text-lg text-white">Nobody was attacked by wolves.</p>
+                  )}
+                  <div className="flex gap-4 pt-4">
+                    <button onClick={handleAction} disabled={!wolfVictim || isProcessing} className="flex-1 bg-green-600 hover:bg-green-500 text-white py-3 rounded-lg font-bold disabled:opacity-50">
+                      Heal Them
+                    </button>
+                    <button onClick={() => { setLocalHealUsed(true); if(!me.potion_poison_used) setWitchMode("poison"); else setHasActed(true); }} className="flex-1 bg-neutral-700 hover:bg-neutral-600 text-white py-3 rounded-lg font-bold">
+                      Skip Healing
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(me.role !== "witch" || witchMode === "poison") && (
+            <>
+              <h3 className="text-lg font-bold mb-4 text-white">Select a Target</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                {selectablePlayers.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => setSelectedTarget(p.id)}
+                    className={`p-4 rounded-xl border text-left transition-all flex items-center justify-between ${
+                      selectedTarget === p.id
+                        ? "bg-indigo-500/20 border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]"
+                        : "bg-neutral-800 border-neutral-700 hover:bg-neutral-700"
+                    }`}
+                  >
+                    <span className="font-bold text-white">{p.name}</span>
+                  </button>
+                ))}
+                {selectablePlayers.length === 0 && (
+                  <p className="text-neutral-500 col-span-full text-center py-4">No valid targets available.</p>
+                )}
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  onClick={handleAction}
+                  disabled={!selectedTarget || isProcessing}
+                  className={`flex-1 py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
+                    !selectedTarget 
+                      ? "bg-neutral-800 text-neutral-500 cursor-not-allowed" 
+                      : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                  }`}
+                >
+                  {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : "Confirm Action"}
+                </button>
+                {me.role === "witch" && witchMode === "poison" && (
+                  <button onClick={() => setHasActed(true)} className="px-6 bg-neutral-700 hover:bg-neutral-600 rounded-xl font-bold text-white">
+                    Skip Poison
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+
         </div>
       ) : (
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center space-y-4">

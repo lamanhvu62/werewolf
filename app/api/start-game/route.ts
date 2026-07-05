@@ -71,7 +71,7 @@ export async function POST(request: Request) {
       .from("rooms")
       .update({ 
         status: "night",
-        current_night_turn: "wolf",
+        current_night_turn: "bodyguard",
         turn_ends_at: turnEndsAt
       })
       .eq("id", roomId);
