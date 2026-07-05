@@ -7,6 +7,8 @@ CREATE TABLE rooms (
   room_code VARCHAR(10) UNIQUE NOT NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'lobby',
   host_id UUID,
+  current_night_turn VARCHAR(20),
+  turn_ends_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

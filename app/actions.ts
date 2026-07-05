@@ -146,7 +146,11 @@ export async function processNightAndStartDay(roomId: string) {
   // 2. Change room status to day
   const { error: roomError } = await supabase
     .from("rooms")
-    .update({ status: "day" })
+    .update({ 
+      status: "day",
+      current_night_turn: null,
+      turn_ends_at: null
+    })
     .eq("id", roomId);
 
   if (roomError) throw new Error(roomError.message);
@@ -194,9 +198,14 @@ export async function processDayAndStartNight(roomId: string) {
   await supabase.from("actions").delete().eq("room_id", roomId);
 
   // 2. Change room status back to night
+  const turnEndsAt = new Date(Date.now() + 15000).toISOString();
   const { error: roomError } = await supabase
     .from("rooms")
-    .update({ status: "night" })
+    .update({ 
+      status: "night",
+      current_night_turn: "wolf",
+      turn_ends_at: turnEndsAt
+    })
     .eq("id", roomId);
 
   if (roomError) throw new Error(roomError.message);

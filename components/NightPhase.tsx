@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Player, Room } from "@/lib/types";
-import { submitAction, processNightAndStartDay } from "@/app/actions";
-import { Moon, Crosshair, Eye, ShieldAlert, Loader2 } from "lucide-react";
+import { submitAction } from "@/app/actions";
+import { Moon, Crosshair, Eye, ShieldAlert, Loader2, Clock } from "lucide-react";
 
 interface NightPhaseProps {
   room: Room;
@@ -16,12 +16,66 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
   const [hasActed, setHasActed] = useState(false);
   const [investigationResult, setInvestigationResult] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(0);
 
   const alivePlayers = players.filter(p => p.is_alive && p.id !== me.id);
   const isHost = room.host_id === me.id;
+  const isMyTurn = me.role === room.current_night_turn;
+  
+  const autoProgressRef = useRef(false);
+
+  // Timer logic
+  useEffect(() => {
+    if (!room.turn_ends_at) return;
+    
+    const updateTimer = () => {
+      const now = new Date().getTime();
+      const end = new Date(room.turn_ends_at!).getTime();
+      const remaining = Math.max(0, Math.floor((end - now) / 1000));
+      setTimeLeft(remaining);
+      return remaining;
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [room.turn_ends_at]);
+
+  // Host auto-progress logic
+  useEffect(() => {
+    if (!isHost || !room.turn_ends_at) return;
+    
+    const now = new Date().getTime();
+    const end = new Date(room.turn_ends_at).getTime();
+    
+    // Allow a small buffer (500ms) to ensure smooth transition and avoid spamming
+    if (now >= end && !autoProgressRef.current) {
+      autoProgressRef.current = true;
+      
+      fetch("/api/next-turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId: room.id }),
+      }).finally(() => {
+        // Reset ref after a short delay so we don't spam if state takes a second to update
+        setTimeout(() => {
+          autoProgressRef.current = false;
+        }, 2000);
+      });
+    }
+  }, [timeLeft, isHost, room.id, room.turn_ends_at]);
+
+  // Reset local state when turn changes
+  useEffect(() => {
+    if (isMyTurn) {
+      setHasActed(false);
+      setInvestigationResult(null);
+      setSelectedTarget(null);
+    }
+  }, [isMyTurn]);
 
   const handleAction = async () => {
-    if (!selectedTarget || hasActed || isProcessing) return;
+    if (!selectedTarget || hasActed || isProcessing || !isMyTurn) return;
     
     setIsProcessing(true);
     try {
@@ -42,17 +96,14 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
     }
   };
 
-  const handleEndNight = async () => {
-    setIsProcessing(true);
-    try {
-      await processNightAndStartDay(room.id);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to end night");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  if (!me.role) {
+    return (
+      <div className="flex flex-col items-center justify-center space-y-6">
+        <Loader2 className="w-16 h-16 text-indigo-500 animate-spin" />
+        <h2 className="text-xl font-bold text-neutral-400">Assigning Roles...</h2>
+      </div>
+    );
+  }
 
   if (!me.is_alive) {
     return (
@@ -60,15 +111,6 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
         <Moon className="w-16 h-16 text-neutral-600" />
         <h2 className="text-3xl font-bold text-neutral-500">You are Dead</h2>
         <p className="text-neutral-600">Wait for the living to finish their night.</p>
-        {isHost && (
-          <button 
-            onClick={handleEndNight}
-            disabled={isProcessing}
-            className="mt-8 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold"
-          >
-            Force End Night (Host)
-          </button>
-        )}
       </div>
     );
   }
@@ -79,15 +121,6 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
         <Moon className="w-16 h-16 text-indigo-400 animate-pulse" />
         <h2 className="text-3xl font-bold text-indigo-300">You are Sleeping</h2>
         <p className="text-neutral-400">Wait for the morning to come...</p>
-        {isHost && (
-          <button 
-            onClick={handleEndNight}
-            disabled={isProcessing}
-            className="mt-8 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold"
-          >
-            {isProcessing ? "Processing..." : "End Night (Host)"}
-          </button>
-        )}
       </div>
     );
   }
@@ -112,7 +145,22 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
         </p>
       </div>
 
-      {!hasActed ? (
+      {room.turn_ends_at && (
+        <div className="flex items-center justify-center gap-3 bg-neutral-900 border border-neutral-800 rounded-xl py-3 px-6 mx-auto w-fit">
+          <Clock className="w-5 h-5 text-indigo-400" />
+          <span className="font-mono text-xl font-bold text-white">00:{timeLeft.toString().padStart(2, '0')}</span>
+        </div>
+      )}
+
+      {!isMyTurn ? (
+        <div className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-8 text-center space-y-4">
+          <Moon className="w-8 h-8 text-neutral-500 mx-auto animate-pulse" />
+          <h3 className="text-xl font-bold text-white uppercase tracking-wider">
+            Waiting for {room.current_night_turn}...
+          </h3>
+          <p className="text-neutral-400">Please wait for your turn.</p>
+        </div>
+      ) : !hasActed ? (
         <div className="bg-neutral-900/50 backdrop-blur-sm border border-neutral-800 rounded-2xl p-6">
           <h3 className="text-lg font-bold mb-4 text-white">Alive Players</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -174,20 +222,7 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
             </div>
           )}
           
-          <p className="text-neutral-400 mt-4">Waiting for morning...</p>
-        </div>
-      )}
-
-      {isHost && (
-        <div className="pt-8 border-t border-neutral-800 mt-8 text-center">
-          <button 
-            onClick={handleEndNight}
-            disabled={isProcessing}
-            className="px-6 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2 mx-auto"
-          >
-            {isProcessing && <Loader2 className="w-4 h-4 animate-spin" />}
-            End Night Phase (Host)
-          </button>
+          <p className="text-neutral-400 mt-4">Waiting for next turn...</p>
         </div>
       )}
     </div>

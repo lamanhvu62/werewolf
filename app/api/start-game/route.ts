@@ -65,10 +65,15 @@ export async function POST(request: Request) {
 
     await Promise.all(updatePromises);
 
-    // Change room status to night
+    // Change room status to night and initialize the night phase engine
+    const turnEndsAt = new Date(Date.now() + 15000).toISOString();
     const { error: updateRoomError } = await supabase
       .from("rooms")
-      .update({ status: "night" })
+      .update({ 
+        status: "night",
+        current_night_turn: "wolf",
+        turn_ends_at: turnEndsAt
+      })
       .eq("id", roomId);
 
     if (updateRoomError) {

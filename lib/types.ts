@@ -6,6 +6,8 @@ export interface Room {
   room_code: string;
   status: RoomStatus;
   host_id: string | null;
+  current_night_turn: string | null;
+  turn_ends_at: string | null;
   created_at: string;
 }
 
