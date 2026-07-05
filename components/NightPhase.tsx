@@ -41,29 +41,33 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
     return () => clearInterval(interval);
   }, [room.turn_ends_at]);
 
-  // Host auto-progress logic
+  // Auto-progress logic for ALL clients
   useEffect(() => {
-    if (!isHost || !room.turn_ends_at) return;
+    if (!room.turn_ends_at) return;
     
     const now = new Date().getTime();
     const end = new Date(room.turn_ends_at).getTime();
     
-    // Allow a small buffer (500ms) to ensure smooth transition and avoid spamming
+    // Allow a small buffer (500ms) to ensure smooth transition
     if (now >= end && !autoProgressRef.current) {
       autoProgressRef.current = true;
       
-      fetch("/api/next-turn", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId: room.id }),
-      }).finally(() => {
-        // Reset ref after a short delay so we don't spam if state takes a second to update
-        setTimeout(() => {
-          autoProgressRef.current = false;
-        }, 2000);
-      });
+      // Add a random delay between 0-1500ms so not all clients hammer the API exactly at the same time
+      const randomDelay = Math.floor(Math.random() * 1500);
+      
+      setTimeout(() => {
+        fetch("/api/next-turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roomId: room.id }),
+        }).finally(() => {
+          setTimeout(() => {
+            autoProgressRef.current = false;
+          }, 2000);
+        });
+      }, randomDelay);
     }
-  }, [timeLeft, isHost, room.id, room.turn_ends_at]);
+  }, [timeLeft, room.id, room.turn_ends_at]);
 
   // Reset local state when turn changes
   useEffect(() => {
