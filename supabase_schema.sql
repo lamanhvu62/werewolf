@@ -47,6 +47,7 @@ CREATE POLICY "Allow anonymous update access to players" ON players FOR UPDATE T
 
 CREATE POLICY "Allow anonymous read access to actions" ON actions FOR SELECT TO anon USING (true);
 CREATE POLICY "Allow anonymous insert access to actions" ON actions FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Allow anonymous delete access to actions" ON actions FOR DELETE TO anon USING (true);
 
 -- Enable Supabase Realtime on these tables
 ALTER PUBLICATION supabase_realtime ADD TABLE rooms;

@@ -107,7 +107,8 @@ export async function submitAction(roomId: string, playerId: string, targetId: s
       room_id: roomId,
       player_id: playerId,
       target_id: targetId,
-      action_type: actionType
+      action_type: actionType,
+      round_number: 1
     }]);
 
   if (error) {
