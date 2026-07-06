@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { Player, Room } from "@/lib/types";
 import { submitAction, getWolfTarget } from "@/app/actions";
 import { Moon, Crosshair, Eye, ShieldAlert, Loader2, Clock, Shield, FlaskConical, Skull, HeartPulse, UserPlus } from "lucide-react";
+import Image from "next/image";
+import { soundManager } from "@/lib/sound-manager";
 
 interface NightPhaseProps {
   room: Room;
@@ -47,6 +49,19 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, [room.turn_ends_at]);
+
+  // Audio for turn ticking
+  useEffect(() => {
+    if (isMyTurn && !hasActed && timeLeft > 0) {
+      soundManager.startTicking();
+    } else {
+      soundManager.stopTicking();
+    }
+    
+    return () => {
+      soundManager.stopTicking();
+    };
+  }, [isMyTurn, hasActed, timeLeft]);
 
   // Auto-progress logic for ALL clients
   useEffect(() => {
@@ -139,6 +154,10 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
       alert("Failed to submit action");
     } finally {
       setIsProcessing(false);
+      soundManager.stopTicking();
+      if (me.role === "seer" && investigationResult) {
+         soundManager.playSeerAction();
+      }
     }
   };
 
@@ -172,22 +191,17 @@ export default function NightPhase({ room, players, me }: NightPhaseProps) {
   }
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-8 pb-12">
+    <div className="w-full max-w-2xl mx-auto space-y-8 pb-12 animate-fade-in">
       <div className="text-center space-y-4 mb-8">
-        <div className="inline-flex p-3 rounded-full bg-neutral-900 border border-neutral-800">
-          {me.role === "wolf" || me.role === "alpha_wolf" ? (
-            <ShieldAlert className="w-8 h-8 text-red-500" />
-          ) : me.role === "seer" ? (
-            <Eye className="w-8 h-8 text-blue-400" />
-          ) : me.role === "bodyguard" ? (
-            <Shield className="w-8 h-8 text-green-500" />
-          ) : me.role === "witch" ? (
-            <FlaskConical className="w-8 h-8 text-purple-500" />
-          ) : me.role === "cult_leader" ? (
-            <UserPlus className="w-8 h-8 text-pink-500" />
-          ) : (
-            <Moon className="w-8 h-8 text-neutral-500" />
-          )}
+        <div className="relative w-32 h-32 mx-auto rounded-full bg-neutral-900 border-2 border-neutral-800 shadow-2xl flex items-center justify-center overflow-hidden transition-transform duration-500 hover:scale-110">
+          <Image 
+            src={`/roles/${me.role}.png`} 
+            alt={me.role.replace("_", " ")} 
+            fill
+            className="object-cover opacity-90"
+            sizes="128px"
+            priority
+          />
         </div>
         <h2 className="text-3xl font-black uppercase tracking-wider text-white">
           {me.role.replace("_", " ")} Phase

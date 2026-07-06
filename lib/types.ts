@@ -8,6 +8,7 @@ export interface Room {
   host_id: string | null;
   current_night_turn: string | null;
   turn_ends_at: string | null;
+  selected_roles: Record<string, number> | null;
   created_at: string;
 }
 

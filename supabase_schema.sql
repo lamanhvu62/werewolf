@@ -4,11 +4,12 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Create rooms table
 CREATE TABLE rooms (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  room_code VARCHAR(10) UNIQUE NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'lobby',
+  room_code VARCHAR(6) UNIQUE NOT NULL,
+  status VARCHAR(20) DEFAULT 'lobby',
   host_id UUID,
   current_night_turn VARCHAR(20),
   turn_ends_at TIMESTAMP WITH TIME ZONE,
+  selected_roles JSONB DEFAULT '{"wolf": 1, "seer": 1}'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

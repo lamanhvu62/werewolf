@@ -332,3 +332,14 @@ export async function processDayAndStartNight(roomId: string) {
   }
 }
 
+export async function updateRoomRoles(roomId: string, newRoles: Record<string, number>) {
+  const { error } = await supabase
+    .from("rooms")
+    .update({ selected_roles: newRoles })
+    .eq("id", roomId);
+
+  if (error) {
+    throw new Error("Failed to update roles: " + error.message);
+  }
+}
+

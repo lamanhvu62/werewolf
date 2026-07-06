@@ -8,6 +8,7 @@ import { Crown, Users, Play, Loader2, Copy, Check } from "lucide-react";
 import NightPhase from "@/components/NightPhase";
 import DayPhase from "@/components/DayPhase";
 import HunterRevenge from "@/components/HunterRevenge";
+import { soundManager } from "@/lib/sound-manager";
 
 export default function RoomPage({ params }: { params: Promise<{ roomCode: string }> }) {
   const { roomCode: rawRoomCode } = use(params);
@@ -21,6 +22,8 @@ export default function RoomPage({ params }: { params: Promise<{ roomCode: strin
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [rolesUpdating, setRolesUpdating] = useState(false);
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (!playerId) {
@@ -114,10 +117,52 @@ export default function RoomPage({ params }: { params: Promise<{ roomCode: strin
     };
   }, [roomCode, playerId]);
 
+  // Audio & Background transitions effect based on status
+  useEffect(() => {
+    if (!room) return;
+    
+    if (room.status === "night") {
+      soundManager.playWolfHowl();
+      soundManager.playNightAmbient();
+    } else {
+      soundManager.stopNightAmbient();
+    }
+    
+    return () => {
+       soundManager.stopNightAmbient();
+    };
+  }, [room?.status]);
+
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleRoleChange = (role: string, delta: number) => {
+    if (!room || room.host_id !== playerId) return;
+    const currentRoles = room.selected_roles || { wolf: 1, seer: 1 };
+    const currentCount = currentRoles[role] || 0;
+    const newCount = Math.max(0, currentCount + delta);
+    
+    const newRoles = { ...currentRoles, [role]: newCount };
+    if (newCount === 0) delete newRoles[role];
+    
+    // Optimistic update
+    setRoom({ ...room, selected_roles: newRoles });
+    
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(async () => {
+      setRolesUpdating(true);
+      try {
+        const { updateRoomRoles } = await import("@/app/actions");
+        await updateRoomRoles(room.id, newRoles);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setRolesUpdating(false);
+      }
+    }, 500);
   };
 
   const handleStartGame = async () => {
@@ -161,11 +206,20 @@ export default function RoomPage({ params }: { params: Promise<{ roomCode: strin
 
   const isHost = room.host_id === playerId;
   const me = players.find(p => p.id === playerId);
+  
+  const SPECIAL_ROLES = ["wolf", "seer", "bodyguard", "witch", "hunter", "alpha_wolf", "cult_leader"];
+  const selectedRoles = room.selected_roles || { wolf: 1, seer: 1 };
+  const totalSelectedRoles = Object.values(selectedRoles).reduce((a, b) => a + (b as number), 0);
+  const isValidRoleCount = totalSelectedRoles <= players.length;
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center p-6 relative overflow-hidden">
+    <main className={`min-h-screen flex flex-col items-center p-6 relative overflow-hidden transition-colors duration-1000 ${
+      room.status === "day" ? "bg-amber-50 text-neutral-900" : "bg-neutral-950 text-neutral-100"
+    }`}>
       {/* Background Effect */}
-      <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none" />
+      <div className={`absolute top-0 right-0 w-[600px] h-[600px] rounded-full blur-[100px] pointer-events-none transition-colors duration-1000 ${
+        room.status === "day" ? "bg-amber-400/20" : "bg-indigo-500/10"
+      }`} />
 
       {room.status === "lobby" && (
         <div className="z-10 w-full max-w-2xl mt-12">
@@ -240,23 +294,57 @@ export default function RoomPage({ params }: { params: Promise<{ roomCode: strin
 
             <div className="space-y-6">
               <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
-                <h3 className="text-lg font-bold mb-4 text-white">Game Settings</h3>
-                <ul className="space-y-3 text-sm text-neutral-400">
-                  <li className="flex justify-between">
-                    <span>Roles</span>
-                    <span className="text-white">Standard (3)</span>
-                  </li>
-                  <li className="flex justify-between">
-                    <span>Min Players</span>
-                    <span className="text-white">3</span>
-                  </li>
-                </ul>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-white">Role Setup</h3>
+                  {rolesUpdating && <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />}
+                </div>
+                
+                <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                  {SPECIAL_ROLES.map(role => {
+                    const count = selectedRoles[role] || 0;
+                    return (
+                      <div key={role} className="flex items-center justify-between bg-neutral-800/50 p-3 rounded-lg border border-neutral-700/50">
+                        <span className="text-sm font-medium text-white capitalize">{role.replace("_", " ")}</span>
+                        {isHost ? (
+                          <div className="flex items-center gap-3">
+                            <button onClick={() => handleRoleChange(role, -1)} disabled={count === 0} className="w-6 h-6 flex items-center justify-center bg-neutral-700 hover:bg-neutral-600 rounded disabled:opacity-50 text-white font-bold">-</button>
+                            <span className="w-4 text-center text-sm font-bold text-white">{count}</span>
+                            <button onClick={() => handleRoleChange(role, 1)} className="w-6 h-6 flex items-center justify-center bg-neutral-700 hover:bg-neutral-600 rounded text-white font-bold">+</button>
+                          </div>
+                        ) : (
+                          <span className="text-sm font-bold text-indigo-400">x{count}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className={`mt-6 p-4 rounded-xl border ${isValidRoleCount ? 'bg-indigo-500/10 border-indigo-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
+                   <div className="flex justify-between items-center mb-2">
+                     <span className="text-sm text-neutral-400">Total Special Roles</span>
+                     <span className={`font-bold ${isValidRoleCount ? 'text-indigo-400' : 'text-red-400'}`}>{totalSelectedRoles}</span>
+                   </div>
+                   <div className="flex justify-between items-center">
+                     <span className="text-sm text-neutral-400">Total Players</span>
+                     <span className="font-bold text-white">{players.length}</span>
+                   </div>
+                   {isValidRoleCount && players.length > 0 && (
+                     <p className="text-xs text-neutral-500 mt-3 pt-3 border-t border-neutral-800">
+                       Any remaining {players.length - totalSelectedRoles} players will automatically become <strong>Villagers</strong>.
+                     </p>
+                   )}
+                   {!isValidRoleCount && (
+                     <p className="text-xs text-red-400 mt-3 pt-3 border-t border-red-900/50">
+                       Cannot select more roles than players!
+                     </p>
+                   )}
+                </div>
                 
                 {isHost ? (
                   <button
                     onClick={handleStartGame}
-                    disabled={players.length < 3 || starting}
-                    className="w-full mt-8 group relative flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold py-3 px-4 rounded-xl overflow-hidden hover:bg-indigo-500 transition-all disabled:opacity-50 disabled:hover:bg-indigo-600 shadow-[0_0_20px_rgba(79,70,229,0.4)] disabled:shadow-none"
+                    disabled={players.length < 3 || starting || !isValidRoleCount}
+                    className="w-full mt-6 group relative flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold py-4 px-4 rounded-xl overflow-hidden hover:bg-indigo-500 transition-all disabled:opacity-50 disabled:hover:bg-indigo-600 shadow-[0_0_20px_rgba(79,70,229,0.4)] disabled:shadow-none"
                   >
                     {starting ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
@@ -268,7 +356,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomCode: strin
                     )}
                   </button>
                 ) : (
-                  <div className="mt-8 p-4 bg-neutral-800/50 rounded-xl text-center border border-neutral-700/50">
+                  <div className="mt-6 p-4 bg-neutral-800/50 rounded-xl text-center border border-neutral-700/50">
                     <p className="text-sm text-neutral-400">Waiting for host to start...</p>
                   </div>
                 )}
