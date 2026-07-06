@@ -13,24 +13,24 @@ class SoundManager {
     // Only initialize if we are in the browser
     if (typeof window !== "undefined") {
       this.nightAmbient = new Howl({
-        src: ["/sounds/night-ambient.mp3"],
+        src: ["https://ycjqhugjlnwewvolmgwh.supabase.co/storage/v1/object/public/sound/night-ambient.mp3"],
         loop: true,
         volume: 0.3,
       });
 
       this.wolfHowl = new Howl({
-        src: ["/sounds/wolf-howl.mp3"],
+        src: ["https://ycjqhugjlnwewvolmgwh.supabase.co/storage/v1/object/public/sound/wolf-howl.mp3"],
         volume: 0.6,
       });
 
       this.clockTick = new Howl({
-        src: ["/sounds/clock-tick.mp3"],
+        src: ["https://ycjqhugjlnwewvolmgwh.supabase.co/storage/v1/object/public/sound/clock-tick.mp3"],
         loop: true,
         volume: 0.4,
       });
 
       this.seerAction = new Howl({
-        src: ["/sounds/seer-action.mp3"],
+        src: ["https://ycjqhugjlnwewvolmgwh.supabase.co/storage/v1/object/public/sound/seer-action.mp3"],
         volume: 0.5,
       });
     }
